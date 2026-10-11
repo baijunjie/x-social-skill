@@ -2,14 +2,14 @@
 
 # skill-x-social
 
-X (Twitter) browser automation skill — post, like, reply, retweet, and quote tweets via Playwright + Chrome.
+X (Twitter) browser automation skill — post, like, reply, retweet, quote, search, and delete your own tweets via Playwright + Chrome.
 
 ## Why Browser Automation?
 
 - **API is expensive** — X official API requires a paid subscription ($200+/month) for posting
-- **Bot browsers get blocked** — X detects and bans headless browsers and common automation fingerprints
-- **Real browser fingerprint** — Reuses the user's actual Chrome to avoid detection
+- **Real browser fingerprint** — Reuses the user's actual Chrome, not a bundled Chromium, so the automation fingerprints X looks for are absent
 - **One-time login** — Log in manually once, session persists in Chrome profile
+- **Headless when it has to be** — Optional, with the `HeadlessChrome` user agent and client hints masked; see [Headless](#headless)
 
 ## Features
 
@@ -20,6 +20,12 @@ X (Twitter) browser automation skill — post, like, reply, retweet, and quote t
 | Reply | `scripts/reply.ts` | Reply to tweets, optionally with images |
 | Retweet | `scripts/retweet.ts` | Retweet without comment |
 | Quote | `scripts/quote.ts` | Quote tweet with comment, optionally with images |
+| Search | `scripts/search.ts` | Search the "Latest" tab, returning structured tweets with author, text, timestamp and counts |
+| List own | `scripts/my-tweets.ts` | Enumerate the signed-in account's own tweets from the profile timeline |
+| Delete | `scripts/delete.ts` | Delete one tweet or a batch by URL |
+| Purge | `scripts/purge.ts` | Bulk delete own tweets straight from the timeline, optionally filtered by a regex |
+
+**Deleting is permanent — X offers no undo.** `purge.ts` without a `match` filter deletes every own tweet the timeline serves, up to `limit`.
 
 All scripts use stdin/stdout JSON — pipe input in, parse output out. See [SKILL.md](SKILL.md) for the full IO protocol.
 
@@ -89,6 +95,18 @@ echo '{"tweetUrl":"https://x.com/user/status/123"}' | npx tsx scripts/retweet.ts
 
 # Quote tweet
 echo '{"tweetUrl":"https://x.com/user/status/123","comment":"Interesting"}' | npx tsx scripts/quote.ts
+
+# Search ("Latest" tab; X search operators work)
+echo '{"query":"\"where did I put\" lang:en -filter:replies","limit":20}' | npx tsx scripts/search.ts
+
+# List your own tweets
+echo '{"tab":"with_replies","limit":200}' | npx tsx scripts/my-tweets.ts
+
+# Delete your own tweets by URL
+echo '{"tweetUrls":["https://x.com/me/status/123"]}' | npx tsx scripts/delete.ts
+
+# Bulk delete your own tweets matching a regex
+echo '{"match":"keyword|other","limit":500}' | npx tsx scripts/purge.ts
 ```
 
 Output is a JSON line:
@@ -104,8 +122,23 @@ Output is a JSON line:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CHROME_PATH` | `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` | Chrome executable path |
+| `X_HEADLESS` | unset (headful) | `1` runs Chrome headless |
 
 Set in `.env` at the project root.
+
+### Headless
+
+A headful Chrome window becomes the frontmost application on launch, so an unattended run
+steals focus from whoever is using the machine — and keystrokes from other automation land
+in Chrome. `X_HEADLESS=1` avoids that: a headless process has no window and never comes
+to the front.
+
+Headless Chrome reports itself as `HeadlessChrome/<ver>` in both `navigator.userAgent` and
+the `Sec-CH-UA` client hints, which sites read. The launcher overrides both with the headful
+user agent, built from the installed Chrome's own major version so it does not drift behind
+Chrome updates; if that version cannot be read it refuses to launch rather than run exposed.
+
+Leave `X_HEADLESS` unset when you want to watch the browser to debug a selector.
 
 ### Timeouts and Limits
 
