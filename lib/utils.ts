@@ -141,35 +141,109 @@ export async function fillDialogAndSubmit(options: DialogSubmitOptions): Promise
 
 // ── Post verification ───────────────────────────────────────────────────────
 
+/** How many times to re-check the profile before giving up on verification. */
+const VERIFY_ATTEMPTS = 5;
+
+/** How many articles to look at on a profile page. */
+const SCAN_ARTICLES = 30;
+
+/**
+ * Which profile tab proves the new item exists.
+ * A standalone post lands on the Posts tab; a reply or quote only shows under Replies.
+ */
+export type ProfileTab = 'posts' | 'with_replies';
+
 export interface ProfileState {
   profilePath: string;
   username: string;
+  tab: ProfileTab;
   urlsBefore: string[];
 }
 
 /**
  * Capture the user's profile state before posting.
- * Navigates to the user's profile "Replies" tab to snapshot current tweet URLs.
+ * Navigates to the given profile tab and snapshots the user's current tweet URLs.
  * Must be called on a page where the left sidebar is visible.
  */
-export async function captureProfileState(page: Page): Promise<ProfileState | null> {
+export async function captureProfileState(page: Page, tab: ProfileTab = 'with_replies'): Promise<ProfileState | null> {
   const profileLink = page.locator('a[data-testid="AppTabBar_Profile_Link"]');
   const profilePath = await profileLink.getAttribute('href').catch(() => null);
   if (!profilePath) return null;
 
   const username = profilePath.replace('/', '');
-  const urlsBefore = await getProfileTweetUrls(page, profilePath, username);
-  return { profilePath, username, urlsBefore };
+  const urlsBefore = await getProfileTweetUrls(page, profilePath, username, tab);
+  return { profilePath, username, tab, urlsBefore };
 }
 
 /**
  * Verify a tweet was posted by comparing profile state before and after.
  * Navigates to the user's profile and checks for a new tweet (higher status ID).
+ *
+ * The new post can take several seconds to show up on the profile, so this polls.
+ * Reporting a failure for a post that actually went out is the worst outcome here —
+ * the caller would retry and post twice.
+ *
  * @returns The new tweet URL, or null if no new tweet was found.
  */
 export async function verifyNewTweet(page: Page, state: ProfileState): Promise<string | null> {
-  const urlsAfter = await getProfileTweetUrls(page, state.profilePath, state.username);
-  return findNewTweetUrl(state.urlsBefore, urlsAfter);
+  for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
+    if (attempt > 0) await page.waitForTimeout(config.timeouts.loadWait);
+    const urlsAfter = await getProfileTweetUrls(page, state.profilePath, state.username, state.tab);
+    const found = findNewTweetUrl(state.urlsBefore, urlsAfter);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** The signed-in account's handle, read from the sidebar without navigating away. */
+export async function getOwnHandle(page: Page): Promise<string | null> {
+  const href = await page
+    .locator('a[data-testid="AppTabBar_Profile_Link"]')
+    .getAttribute('href')
+    .catch(() => null);
+  return href ? href.replace('/', '') : null;
+}
+
+/**
+ * Verify our own reply by looking for it on the target tweet's own page.
+ *
+ * The profile "Replies" tab serves stale, out-of-order data and routinely omits a reply
+ * posted seconds ago, so comparing profile snapshots reports failures for replies that
+ * actually went out — and the caller then posts a second copy. The thread page shows it.
+ *
+ * @returns The reply URL, or null if it never showed up.
+ */
+export async function verifyOwnReplyOnTweetPage(
+  page: Page,
+  tweetUrl: string,
+  username: string,
+  content: string
+): Promise<string | null> {
+  const needle = content.trim().slice(0, 30);
+
+  for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
+    if (attempt > 0) await page.waitForTimeout(config.timeouts.loadWait);
+    await navigateTo(page, tweetUrl);
+
+    const href = await page.$$eval(
+      sel.tweet,
+      (articles, args) =>
+        articles
+          .map(article => {
+            const timeEl = article.querySelector('a[href*="/status/"] time');
+            const link = timeEl ? (timeEl.closest('a') as HTMLAnchorElement | null) : null;
+            const textEl = article.querySelector('[data-testid="tweetText"]') as HTMLElement | null;
+            return { href: link?.getAttribute('href') || '', text: textEl?.innerText || '' };
+          })
+          .filter(item => item.href.startsWith(`/${args.username}/status/`) && item.text.includes(args.needle))
+          .map(item => item.href)[0] || '',
+      { username, needle }
+    );
+
+    if (href) return `https://x.com${href}`;
+  }
+
+  return null;
 }
 
 // ── Toggle action (like/retweet) ────────────────────────────────────────────
@@ -237,25 +311,34 @@ async function getTweetUrl(tweet: Locator): Promise<string | null> {
   return href.startsWith('http') ? href : `https://x.com${href}`;
 }
 
-async function getOwnTweetUrls(page: Page, username: string, limit = 5): Promise<string[]> {
+/**
+ * Collect the user's own tweet URLs from the profile page currently open.
+ * Scans a wide window and keeps every match: the Replies tab is not reliably
+ * newest-first, so stopping at the first few would miss a just-posted item.
+ */
+async function getOwnTweetUrls(page: Page, username: string, scan = SCAN_ARTICLES): Promise<string[]> {
   const tweets = page.locator(sel.tweet);
   const count = await tweets.count();
   const urls: string[] = [];
 
-  for (let i = 0; i < Math.min(count, limit + 5); i++) {
-    const tweet = tweets.nth(i);
-    const url = await getTweetUrl(tweet);
+  for (let i = 0; i < Math.min(count, scan); i++) {
+    const url = await getTweetUrl(tweets.nth(i));
     if (url && url.includes(`/${username}/`)) {
       urls.push(url);
-      if (urls.length >= limit) break;
     }
   }
 
   return urls;
 }
 
-async function getProfileTweetUrls(page: Page, profilePath: string, username: string): Promise<string[]> {
-  await navigateTo(page, `https://x.com${profilePath}/with_replies`);
+async function getProfileTweetUrls(
+  page: Page,
+  profilePath: string,
+  username: string,
+  tab: ProfileTab = 'with_replies'
+): Promise<string[]> {
+  const suffix = tab === 'posts' ? '' : '/with_replies';
+  await navigateTo(page, `https://x.com${profilePath}${suffix}`);
   return getOwnTweetUrls(page, username);
 }
 

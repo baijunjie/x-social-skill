@@ -47,7 +47,8 @@ async function postTweet(input: PostInput): Promise<ScriptResult> {
     }
 
     // Capture profile state before posting
-    const state = await captureProfileState(page);
+    // A standalone post shows up on the Posts tab; the Replies tab is not newest-first.
+    const state = await captureProfileState(page, 'posts');
     if (!state) {
       return { success: false, message: 'Could not find profile link in sidebar' };
     }

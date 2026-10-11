@@ -47,8 +47,8 @@ async function quoteTweet(input: QuoteInput): Promise<ScriptResult> {
       return { success: false, message: error || 'Navigation failed' };
     }
 
-    // Capture profile state before quoting
-    const state = await captureProfileState(page);
+    // A quote tweet lands on our own Posts tab, not under Replies.
+    const state = await captureProfileState(page, 'posts');
     if (!state) {
       return { success: false, message: 'Could not find profile link in sidebar' };
     }

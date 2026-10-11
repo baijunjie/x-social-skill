@@ -13,8 +13,8 @@ import {
   getFirstTweet,
   clickTweetButton,
   fillDialogAndSubmit,
-  captureProfileState,
-  verifyNewTweet
+  getOwnHandle,
+  verifyOwnReplyOnTweetPage
 } from '../lib/utils.js';
 import { config } from '../lib/config.js';
 
@@ -47,14 +47,10 @@ async function replyToTweet(input: ReplyInput): Promise<ScriptResult> {
       return { success: false, message: error || 'Navigation failed' };
     }
 
-    // Capture profile state before replying
-    const state = await captureProfileState(page);
-    if (!state) {
+    const username = await getOwnHandle(page);
+    if (!username) {
       return { success: false, message: 'Could not find profile link in sidebar' };
     }
-
-    // Navigate back to tweet page
-    await navigateTo(page, tweetUrl);
 
     // Click reply button
     const tweet = getFirstTweet(page);
@@ -72,11 +68,11 @@ async function replyToTweet(input: ReplyInput): Promise<ScriptResult> {
       return { success: false, message: result.error || 'Failed to submit reply' };
     }
 
-    // Verify by comparing profile before/after
-    const newUrl = await verifyNewTweet(page, state);
+    // Verify on the thread page: the profile Replies tab is stale and misses fresh replies.
+    const newUrl = await verifyOwnReplyOnTweetPage(page, tweetUrl, username, content);
 
     if (!newUrl) {
-      return { success: false, message: 'Reply not posted: profile unchanged after replying' };
+      return { success: false, message: 'Reply not found on the tweet page after submitting' };
     }
 
     return { success: true, message: `Reply posted: ${newUrl}` };
