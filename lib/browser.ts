@@ -3,6 +3,7 @@
  */
 
 import { chromium, BrowserContext, Page } from 'playwright';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { config } from './config.js';
@@ -34,6 +35,25 @@ function cleanupLockFiles(): void {
 }
 
 /**
+ * Headless Chrome reports itself as "HeadlessChrome/<ver>" in both navigator.userAgent
+ * and the Sec-CH-UA client hints, which X reads. Build the matching headful UA so the
+ * two modes are indistinguishable; the major version comes from the binary so it does
+ * not drift behind Chrome updates.
+ */
+function headfulUserAgent(): string {
+  let major = '';
+  try {
+    const raw = execFileSync(config.chromePath, ['--version'], { encoding: 'utf8', timeout: 10000 });
+    major = (raw.match(/(\d+)\./) || [])[1] || '';
+  } catch {
+  }
+  if (!major) {
+    throw new Error(`Cannot read Chrome version from ${config.chromePath}; refusing to run headless with a HeadlessChrome user agent.`);
+  }
+  return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
+}
+
+/**
  * Get browser context with persistent profile
  * @param skipAuthCheck - Skip auth file check (for setup script)
  */
@@ -44,11 +64,15 @@ export async function getBrowserContext(skipAuthCheck = false): Promise<BrowserC
 
   cleanupLockFiles();
 
+  const headless = process.env.X_HEADLESS === '1';
+  const userAgent = headless ? headfulUserAgent() : undefined;
+
   currentContext = await chromium.launchPersistentContext(config.browserDataDir, {
     executablePath: config.chromePath,
-    headless: false,
+    headless,
     viewport: config.viewport,
-    args: config.chrome.args,
+    ...(userAgent ? { userAgent } : {}),
+    args: userAgent ? [...config.chrome.args, `--user-agent=${userAgent}`] : config.chrome.args,
     ignoreDefaultArgs: config.chrome.ignoreDefaultArgs,
   });
 
