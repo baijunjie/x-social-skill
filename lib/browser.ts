@@ -115,9 +115,17 @@ export async function navigateToTweet(
   try {
     await navigateTo(page, url);
 
-    const exists = await page.locator(config.selectors.tweet).first().isVisible().catch(() => false);
-    if (!exists) {
-      return { page, success: false, error: 'Tweet not found. It may have been deleted or the URL is invalid.' };
+    // X renders tweet content after the initial document has loaded.
+    try {
+      await page.locator(config.selectors.tweet).first().waitFor({
+        state: 'visible', timeout: config.timeouts.navigation,
+      });
+    } catch (err) {
+      if (!(err instanceof Error) || err.name !== 'TimeoutError') throw err;
+      return {
+        page, success: false,
+        error: `Tweet content did not become visible within ${config.timeouts.navigation} ms. The page may still be loading or the post may be unavailable.`,
+      };
     }
 
     return { page, success: true };
