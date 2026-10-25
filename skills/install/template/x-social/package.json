@@ -1,0 +1,24 @@
+{
+  "name": "x-social-skill",
+  "version": "1.1.0",
+  "private": true,
+  "description": "X (Twitter) browser automation skill — post, like, reply, retweet, quote, search, list mentions and delete own tweets via Playwright",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "setup": "./run.sh setup"
+  },
+  "dependencies": {
+    "playwright": "^1.58.1",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}

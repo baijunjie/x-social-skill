@@ -7,6 +7,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { config } from './config.js';
+import { resolveAccount } from './account.js';
 
 // Track current context for cleanup on termination
 let currentContext: BrowserContext | null = null;
@@ -22,9 +23,9 @@ process.on('SIGTERM', async () => {
 /**
  * Clean up browser lock files to prevent "browser already running" errors
  */
-function cleanupLockFiles(): void {
+function cleanupLockFiles(profileDir: string): void {
   for (const lockFile of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
-    const lockPath = path.join(config.browserDataDir, lockFile);
+    const lockPath = path.join(profileDir, lockFile);
     if (fs.existsSync(lockPath)) {
       try {
         fs.unlinkSync(lockPath);
@@ -55,19 +56,15 @@ function headfulUserAgent(): string {
 
 /**
  * Get browser context with persistent profile
- * @param skipAuthCheck - Skip auth file check (for setup script)
+ * @param profileDir - Profile to launch; defaults to the resolved account's (setup passes its own)
  */
-export async function getBrowserContext(skipAuthCheck = false): Promise<BrowserContext> {
-  if (!skipAuthCheck && !fs.existsSync(config.authPath)) {
-    throw new Error('X authentication not configured. Run "npx tsx scripts/setup.ts" to complete login.');
-  }
-
-  cleanupLockFiles();
+export async function getBrowserContext(profileDir = resolveAccount().profileDir): Promise<BrowserContext> {
+  cleanupLockFiles(profileDir);
 
   const headless = process.env.X_HEADLESS === '1';
   const userAgent = headless ? headfulUserAgent() : undefined;
 
-  currentContext = await chromium.launchPersistentContext(config.browserDataDir, {
+  currentContext = await chromium.launchPersistentContext(profileDir, {
     executablePath: config.chromePath,
     headless,
     viewport: config.viewport,

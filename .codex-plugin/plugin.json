@@ -1,0 +1,25 @@
+{
+  "name": "x-social",
+  "version": "1.1.0",
+  "description": "Installer that adds X (Twitter) automation to a single project: post, like, reply, retweet, quote, search, list mentions and delete your own tweets through your own Chrome, with multiple accounts",
+  "author": {
+    "name": "BaiJunjie"
+  },
+  "repository": "https://github.com/baijunjie/x-social-skill",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "X Social",
+    "shortDescription": "Install X (Twitter) automation into a project",
+    "longDescription": "Carries only an installer, so X automation stays invisible to agents until it is installed into a project. The installed skill posts, likes, replies, retweets and quotes tweets, searches X, lists mentions and your own tweets, and deletes your own tweets by driving your installed Chrome with Playwright, with several logged-in accounts per project.",
+    "developerName": "BaiJunjie",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Install x-social into this project."
+    ]
+  }
+}

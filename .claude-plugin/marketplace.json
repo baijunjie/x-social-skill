@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "x-social-skill",
+  "description": "X (Twitter) browser automation via Playwright + Chrome",
+  "owner": {
+    "name": "BaiJunjie",
+    "email": "bjj19851010@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "x-social",
+      "description": "Installer that adds X (Twitter) automation to a single project: post, like, reply, retweet, quote, search, list mentions and delete your own tweets through your own Chrome, with multiple accounts",
+      "author": {
+        "name": "BaiJunjie"
+      },
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

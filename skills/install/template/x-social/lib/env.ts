@@ -1,17 +1,15 @@
 /**
  * Environment loader
- * Loads .env file from project root
+ * Loads a .env file
  */
 
 import fs from 'fs';
-import path from 'path';
 
 /**
- * Load environment variables from .env file in project root.
+ * Load environment variables from a .env file.
  * Only sets variables that are not already defined in process.env.
  */
-export function loadEnv(): void {
-  const envPath = path.join(process.cwd(), '.env');
+export function loadEnv(envPath: string): void {
   if (!fs.existsSync(envPath)) return;
 
   const content = fs.readFileSync(envPath, 'utf-8');

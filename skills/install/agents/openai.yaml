@@ -1,0 +1,6 @@
+interface:
+  display_name: "Install X Social"
+  short_description: "Install the x-social skill into the current project"
+  default_prompt: "Use $x-social:install to install the x-social skill into this project."
+policy:
+  allow_implicit_invocation: false

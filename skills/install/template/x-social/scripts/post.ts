@@ -16,6 +16,7 @@ import {
   verifyNewTweet
 } from '../lib/utils.js';
 import { config } from '../lib/config.js';
+import { SETUP_HINT } from '../lib/account.js';
 
 const sel = config.selectors;
 const btn = sel.buttons;
@@ -43,7 +44,7 @@ async function postTweet(input: PostInput): Promise<ScriptResult> {
 
     const { loggedIn, onLoginPage } = await checkLoginStatus(page);
     if (!loggedIn && onLoginPage) {
-      return { success: false, message: 'X login expired. Run "npx tsx scripts/setup.ts" to re-authenticate.' };
+      return { success: false, message: `X login expired. ${SETUP_HINT}` };
     }
 
     // Capture profile state before posting

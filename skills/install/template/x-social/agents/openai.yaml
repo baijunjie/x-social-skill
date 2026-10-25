@@ -1,0 +1,4 @@
+interface:
+  display_name: "X Social"
+  short_description: "Post, reply, search and manage tweets on X"
+  default_prompt: "Use $x-social to post a tweet on X."
