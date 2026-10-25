@@ -22,6 +22,7 @@ X (Twitter) 浏览器自动化 skill — 通过 Playwright + Chrome 发推、点
 | 引用 | `scripts/quote.ts` | 引用推文并附加评论，可附带图片 |
 | 搜索 | `scripts/search.ts` | 搜索「最新」标签页，返回结构化推文（作者、正文、时间、各项计数） |
 | 列出自己的推文 | `scripts/my-tweets.ts` | 从个人主页时间线枚举当前账号自己的推文 |
+| 列出提及 | `scripts/mentions.ts` | 从通知页「提及」标签列出回复与 @ 当前账号的推文 |
 | 删除 | `scripts/delete.ts` | 按 URL 删除单条或批量删除 |
 | 批量清理 | `scripts/purge.ts` | 直接从时间线批量删除自己的推文，可用正则过滤 |
 
@@ -101,6 +102,7 @@ echo '{"query":"\"忘了放哪\" lang:zh -filter:replies","limit":20}' | npx tsx
 
 # 列出自己的推文
 echo '{"tab":"with_replies","limit":200}' | npx tsx scripts/my-tweets.ts
+echo '{"limit":40}' | npx tsx scripts/mentions.ts
 
 # 按 URL 删除自己的推文
 echo '{"tweetUrls":["https://x.com/me/status/123"]}' | npx tsx scripts/delete.ts

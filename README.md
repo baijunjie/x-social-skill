@@ -22,6 +22,7 @@ X (Twitter) browser automation skill — post, like, reply, retweet, quote, sear
 | Quote | `scripts/quote.ts` | Quote tweet with comment, optionally with images |
 | Search | `scripts/search.ts` | Search the "Latest" tab, returning structured tweets with author, text, timestamp and counts |
 | List own | `scripts/my-tweets.ts` | Enumerate the signed-in account's own tweets from the profile timeline |
+| Mentions | `scripts/mentions.ts` | List replies and @-mentions addressed to the signed-in account, from the notifications Mentions tab |
 | Delete | `scripts/delete.ts` | Delete one tweet or a batch by URL |
 | Purge | `scripts/purge.ts` | Bulk delete own tweets straight from the timeline, optionally filtered by a regex |
 
@@ -101,6 +102,7 @@ echo '{"query":"\"where did I put\" lang:en -filter:replies","limit":20}' | npx 
 
 # List your own tweets
 echo '{"tab":"with_replies","limit":200}' | npx tsx scripts/my-tweets.ts
+echo '{"limit":40}' | npx tsx scripts/mentions.ts
 
 # Delete your own tweets by URL
 echo '{"tweetUrls":["https://x.com/me/status/123"]}' | npx tsx scripts/delete.ts

@@ -16,6 +16,7 @@ description: X (Twitter) browser automation skill. Post tweets, like, reply, ret
 | Quote | `scripts/quote.ts` | `{"tweetUrl","comment","imagePaths?"}` | `Quote tweet posted: <url>` |
 | Search | `scripts/search.ts` | `{"query","limit?","scrolls?"}` | `Found <n> tweets` |
 | List own | `scripts/my-tweets.ts` | `{"tab?","limit?","scrolls?"}` | `Found <n> own tweets on <tab>` |
+| Mentions | `scripts/mentions.ts` | `{"limit?","scrolls?"}` | `Found <n> mentions` |
 | Delete | `scripts/delete.ts` | `{"tweetUrl"}` or `{"tweetUrls":[...]}` | `Deleted <n>/<total> tweets` |
 | Purge | `scripts/purge.ts` | `{"match?","limit?","tab?"}` | `Deleted <n>, skipped <n> non-matching, <n> failed` |
 
@@ -105,6 +106,7 @@ echo '{"tweetUrl":"https://x.com/user/status/123"}' | npx tsx <skill-directory>/
 echo '{"tweetUrl":"https://x.com/user/status/123","comment":"Interesting"}' | npx tsx <skill-directory>/scripts/quote.ts
 echo '{"query":"\"where did I put\" lang:en -filter:replies","limit":20}' | npx tsx <skill-directory>/scripts/search.ts
 echo '{"tab":"with_replies","limit":200}' | npx tsx <skill-directory>/scripts/my-tweets.ts
+echo '{"limit":40}' | npx tsx <skill-directory>/scripts/mentions.ts
 echo '{"tweetUrls":["https://x.com/me/status/123","https://x.com/me/status/456"]}' | npx tsx <skill-directory>/scripts/delete.ts
 ```
 
