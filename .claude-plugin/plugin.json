@@ -1,6 +1,6 @@
 {
   "name": "x-social",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Installer that adds X (Twitter) automation to a single project: post, like, reply, retweet, quote, search, list mentions and delete your own tweets through your own Chrome, with multiple accounts",
   "author": {
     "name": "BaiJunjie"

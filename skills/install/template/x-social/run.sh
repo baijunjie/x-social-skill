@@ -14,4 +14,6 @@ if [ ! -x "$dir/node_modules/.bin/tsx" ] || ! cmp -s "$dir/package-lock.json" "$
   (cd "$dir" && npm ci --omit=dev --no-audit --no-fund >&2)
   cp "$dir/package-lock.json" "$stamp"
 fi
-exec "$dir/node_modules/.bin/tsx" "$dir/scripts/$1.ts"
+# Start tsx through node rather than its #!/usr/bin/env node shim: under launchd, macOS
+# refuses (EPERM) node scripts on an external volume that are executed via the shebang.
+exec node "$dir/node_modules/tsx/dist/cli.mjs" "$dir/scripts/$1.ts"
