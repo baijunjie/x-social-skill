@@ -6,7 +6,7 @@
 
 import { getBrowserContext, navigateToTweet } from '../lib/browser.js';
 import { runScript, ScriptResult } from '../lib/script.js';
-import { validateTweetUrl, getFirstTweet, toggleTweetAction } from '../lib/utils.js';
+import { validateTweetUrl, getTargetTweet, toggleTweetAction } from '../lib/utils.js';
 import { config } from '../lib/config.js';
 
 const btn = config.selectors.buttons;
@@ -30,7 +30,7 @@ async function likeTweet(input: LikeInput): Promise<ScriptResult> {
       return { success: false, message: error || 'Navigation failed' };
     }
 
-    const tweet = getFirstTweet(page);
+    const tweet = getTargetTweet(page, tweetUrl);
     return await toggleTweetAction({
       tweet,
       page,
