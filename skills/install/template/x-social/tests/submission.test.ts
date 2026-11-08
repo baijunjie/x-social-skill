@@ -175,3 +175,68 @@ test('URL evidence cannot replace matching body text or prove a second missing l
   assert.equal(await tweetMatchesContent(page.locator('article'),
     'Read https://x.com/hifumi369/status/555 https://github.com/baijunjie/octoboard'), false);
 }));
+
+
+for (const onlyLink of [false, true]) {
+  test(`non-anchor quote navigation proves the exact URL (${onlyLink ? 'URL only' : 'body and URL'})`, async () => fixture(async page => {
+    const card = '<div role="link" tabindex="0" onclick="location.href=\'https://x.com/hifumi369/status/555\'"><div data-testid="tweetText">Quoted introduction</div></div>';
+    const body = article('me', '123', 'Read').replace('</article>', card + '</article>')
+      .replace(onlyLink ? '<div data-testid="tweetText">Read</div>' : 'UNUSED', '');
+    await page.context().route('https://x.com/**', route => route.fulfill({ contentType: 'text/html', body }));
+    await page.setContent(body);
+    const originalUrl = page.url();
+    assert.equal(await tweetMatchesContent(page.locator('article'),
+      onlyLink ? 'https://x.com/hifumi369/status/555' : 'Read https://x.com/hifumi369/status/555'), true);
+    assert.equal(page.url(), originalUrl);
+    assert.equal(page.context().pages().length, 1);
+  }));
+}
+
+test('non-anchor quote navigation to another status is not accepted', async () => fixture(async page => {
+  const card = '<div role="link" onclick="location.href=\'https://x.com/hifumi369/status/556\'"><div data-testid="tweetText">Same quoted body</div></div>';
+  const body = article('me', '123', 'Read').replace('</article>', card + '</article>');
+  await page.context().route('https://x.com/**', route => route.fulfill({ contentType: 'text/html', body }));
+  await page.setContent(body);
+  assert.equal(await tweetMatchesContent(page.locator('article'), 'Read https://x.com/hifumi369/status/555'), false);
+  assert.equal(page.context().pages().length, 1);
+}));
+
+
+test('quote fallback waits for delayed card rendering and leaves no extra pages', async () => fixture(async page => {
+  const card = '<div role="link" onclick="location.href=\'https://x.com/hifumi369/status/555\'"><div data-testid="tweetText">Quoted introduction</div></div>';
+  const base = article('me', '123', 'Read');
+  await page.setContent(base.replace('</article>', card + '</article>'));
+  const body = base + `<script>setTimeout(() => document.querySelector('article').insertAdjacentHTML('beforeend', ${JSON.stringify(card)}), 120)</script>`;
+  await page.context().route('https://x.com/**', route => route.fulfill({ contentType: 'text/html', body }));
+  assert.equal(await tweetMatchesContent(page.locator('article'), 'Read https://x.com/hifumi369/status/555'), true);
+  assert.equal(page.context().pages().length, 1);
+}));
+
+test('real published reply DOM resolves its sole non-anchor quote among six role links', async () => fixture(async page => {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('./fixtures/real-role-link-quote.html', import.meta.url), 'utf8');
+  const content = '引継書を書かせてスレッドを移してるところ、Codexの続きは新しいセッションに渡すと、長い会話の圧縮で抜ける細部を少し減らせる。その渡し方を、自分が作ってる Octoboard に入れてる。\n\nhttps://x.com/hifumi369/status/2118372216639504398';
+  const wired = html + `<script>document.querySelector('div[role="link"]').onclick = () => {
+    location.href = 'https://x.com/hifumi369/status/2118372216639504398';
+  };</script>`;
+  await page.context().route('https://x.com/**', route => route.fulfill({ contentType: 'text/html', body: wired }));
+  await page.setContent(html);
+  const tweet = page.locator('article');
+  assert.equal(await tweet.locator('[role="link"]').count(), 6);
+  assert.equal(await tweet.locator('div[role="link"]').count(), 1);
+  assert.equal(await tweet.locator('a[href*="2118372216639504398"]').count(), 0);
+  assert.equal(await tweetMatchesContent(tweet, content), true);
+  assert.equal(page.context().pages().length, 1);
+}));
+
+
+test('thread and reply pages may have different ordinary role-link counts and order', async () => fixture(async page => {
+  const card = '<div role="link" onclick="location.href=\'https://x.com/hifumi369/status/555\'"><div data-testid="tweetText">Quoted introduction</div></div>';
+  const original = article('me', '123', 'Read').replace('</article>', card + '</article>');
+  await page.setContent(original);
+  const ownPage = original.replace('<article data-testid="tweet">',
+    '<article data-testid="tweet"><a role="link" href="/me/status/123">timestamp</a><a role="link" href="/me">author</a>');
+  await page.context().route('https://x.com/**', route => route.fulfill({ contentType: 'text/html', body: ownPage }));
+  assert.equal(await tweetMatchesContent(page.locator('article'), 'Read https://x.com/hifumi369/status/555'), true);
+  assert.equal(page.context().pages().length, 1);
+}));
