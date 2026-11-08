@@ -4,17 +4,20 @@
  * Usage: echo '{"tweetUrl":"https://x.com/user/status/123","comment":"My thoughts"}' | npx tsx scripts/quote.ts
  */
 
-import { getBrowserContext, navigateToTweet, navigateTo } from '../lib/browser.js';
+import { getBrowserContext, navigateToTweet } from '../lib/browser.js';
+import { resolveAccount } from '../lib/account.js';
 import { runScript, ScriptResult } from '../lib/script.js';
 import {
   validateTweetUrl,
   validateContent,
   validateImagePaths,
-  getFirstTweet,
+  getTargetTweet,
   clickTweetButton,
   fillDialogAndSubmit,
   captureProfileState,
-  verifyNewTweet
+  verifyNewTweet,
+  getOwnHandle,
+  verifySubmission
 } from '../lib/utils.js';
 import { config } from '../lib/config.js';
 
@@ -47,6 +50,8 @@ async function quoteTweet(input: QuoteInput): Promise<ScriptResult> {
       return { success: false, message: error || 'Navigation failed' };
     }
 
+    await getOwnHandle(page, resolveAccount().handle);
+
     // A quote tweet lands on our own Posts tab, not under Replies.
     const state = await captureProfileState(page, 'posts');
     if (!state) {
@@ -54,10 +59,11 @@ async function quoteTweet(input: QuoteInput): Promise<ScriptResult> {
     }
 
     // Navigate back to tweet page
-    await navigateTo(page, tweetUrl);
+    const revisited = await navigateToTweet(context, tweetUrl);
+    if (!revisited.success) return { success: false, message: revisited.error || 'Navigation failed' };
 
     // Click retweet button to open menu
-    const tweet = getFirstTweet(page);
+    const tweet = getTargetTweet(page, tweetUrl);
     await clickTweetButton(tweet, `${btn.retweet}, ${btn.unretweet}`, page);
 
     // Click quote option
@@ -74,21 +80,15 @@ async function quoteTweet(input: QuoteInput): Promise<ScriptResult> {
       imagePaths,
     });
 
-    if (!result.success) {
+    if (!result.success && !result.submitted) {
       return { success: false, message: result.error || 'Failed to submit quote' };
     }
 
-    // Verify by comparing profile before/after
-    const newUrl = await verifyNewTweet(page, state);
-
-    if (!newUrl) {
-      return { success: false, message: 'Quote not posted: profile unchanged after quoting' };
-    }
-
-    return { success: true, message: `Quote tweet posted: ${newUrl}` };
+    return await verifySubmission(page, 'Quote tweet', verificationPage =>
+      verifyNewTweet(verificationPage, state, comment));
 
   } finally {
-    if (context) await context.close();
+    if (context) await context.close().catch(() => {});
   }
 }
 

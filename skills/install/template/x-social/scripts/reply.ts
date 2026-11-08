@@ -4,17 +4,19 @@
  * Usage: echo '{"tweetUrl":"https://x.com/user/status/123","content":"Great post!"}' | npx tsx scripts/reply.ts
  */
 
-import { getBrowserContext, navigateToTweet, navigateTo } from '../lib/browser.js';
+import { getBrowserContext, navigateToTweet } from '../lib/browser.js';
+import { resolveAccount } from '../lib/account.js';
 import { runScript, ScriptResult } from '../lib/script.js';
 import {
   validateTweetUrl,
   validateContent,
   validateImagePaths,
-  getFirstTweet,
+  getTargetTweet,
   clickTweetButton,
   fillDialogAndSubmit,
   getOwnHandle,
-  verifyOwnReplyOnTweetPage
+  verifyOwnReplyOnTweetPage,
+  verifySubmission
 } from '../lib/utils.js';
 import { config } from '../lib/config.js';
 
@@ -47,14 +49,16 @@ async function replyToTweet(input: ReplyInput): Promise<ScriptResult> {
       return { success: false, message: error || 'Navigation failed' };
     }
 
-    const username = await getOwnHandle(page);
+    const username = await getOwnHandle(page, resolveAccount().handle);
     if (!username) {
       return { success: false, message: 'Could not find profile link in sidebar' };
     }
 
     // Click reply button
-    const tweet = getFirstTweet(page);
+    const tweet = getTargetTweet(page, tweetUrl);
     await clickTweetButton(tweet, btn.reply, page);
+
+    const submittedAfter = Date.now();
 
     // Fill dialog and submit
     const result = await fillDialogAndSubmit({
@@ -64,21 +68,15 @@ async function replyToTweet(input: ReplyInput): Promise<ScriptResult> {
       imagePaths,
     });
 
-    if (!result.success) {
+    if (!result.success && !result.submitted) {
       return { success: false, message: result.error || 'Failed to submit reply' };
     }
 
-    // Verify on the thread page: the profile Replies tab is stale and misses fresh replies.
-    const newUrl = await verifyOwnReplyOnTweetPage(page, tweetUrl, username, content);
-
-    if (!newUrl) {
-      return { success: false, message: 'Reply not found on the tweet page after submitting' };
-    }
-
-    return { success: true, message: `Reply posted: ${newUrl}` };
+    return await verifySubmission(page, 'Reply', verificationPage =>
+      verifyOwnReplyOnTweetPage(verificationPage, tweetUrl, username, content, submittedAfter));
 
   } finally {
-    if (context) await context.close();
+    if (context) await context.close().catch(() => {});
   }
 }
 

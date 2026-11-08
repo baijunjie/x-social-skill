@@ -5,6 +5,7 @@
  */
 
 import { getBrowserContext, navigateTo } from '../lib/browser.js';
+import { resolveAccount } from '../lib/account.js';
 import { runScript, ScriptResult } from '../lib/script.js';
 import {
   checkLoginStatus,
@@ -13,7 +14,9 @@ import {
   validateContent,
   validateImagePaths,
   captureProfileState,
-  verifyNewTweet
+  verifyNewTweet,
+  getOwnHandle,
+  verifySubmission
 } from '../lib/utils.js';
 import { config } from '../lib/config.js';
 import { SETUP_HINT } from '../lib/account.js';
@@ -47,6 +50,8 @@ async function postTweet(input: PostInput): Promise<ScriptResult> {
       return { success: false, message: `X login expired. ${SETUP_HINT}` };
     }
 
+    await getOwnHandle(page, resolveAccount().handle);
+
     // Capture profile state before posting
     // A standalone post shows up on the Posts tab; the Replies tab is not newest-first.
     const state = await captureProfileState(page, 'posts');
@@ -73,20 +78,17 @@ async function postTweet(input: PostInput): Promise<ScriptResult> {
       return { success: false, message: 'Post button disabled. Content may be empty or exceed character limit.' };
     }
 
-    await postButton.click({ force: true });
-    await page.waitForTimeout(config.timeouts.loadWait);
-
-    // Verify by comparing profile before/after
-    const newUrl = await verifyNewTweet(page, state);
-
-    if (!newUrl) {
-      return { success: false, message: 'Tweet not posted: profile unchanged after posting' };
+    try {
+      await postButton.click({ force: true });
+      await tweetInput.waitFor({ state: 'hidden', timeout: config.timeouts.loadWait });
+    } catch {
+      // A click timeout can arrive after acceptance; verify without another write.
     }
-
-    return { success: true, message: `Tweet posted: ${newUrl}` };
+    return await verifySubmission(page, 'Tweet', verificationPage =>
+      verifyNewTweet(verificationPage, state, content));
 
   } finally {
-    if (context) await context.close();
+    if (context) await context.close().catch(() => {});
   }
 }
 

@@ -175,7 +175,13 @@ to the front.
 Headless Chrome reports itself as `HeadlessChrome/<ver>` in both `navigator.userAgent` and
 the `Sec-CH-UA` client hints, which sites read. The launcher overrides both with the headful
 user agent, built from the installed Chrome's own major version so it does not drift behind
-Chrome updates; if that version cannot be read it refuses to launch rather than run exposed.
+Chrome updates; on macOS app bundles it reads `Info.plist` without launching Chrome, and
+elsewhere it runs a bounded `--version` probe. If that version cannot be read it refuses to launch.
+
+Post, reply and quote results include a confirmed URL or an explicit unknown outcome
+(`data.outcome: "unknown"`, `retrySafe: false`). A submit timeout is followed by read-only
+verification in a separate page. Never retry an unknown write automatically: check the
+thread or account timeline first. Allow at least 300 seconds for submission and verification.
 
 Leave `X_HEADLESS` unset when you want to watch the browser to debug a selector.
 

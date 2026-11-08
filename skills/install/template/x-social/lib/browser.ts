@@ -35,22 +35,28 @@ function cleanupLockFiles(profileDir: string): void {
   }
 }
 
-/**
- * Headless Chrome reports itself as "HeadlessChrome/<ver>" in both navigator.userAgent
- * and the Sec-CH-UA client hints, which X reads. Build the matching headful UA so the
- * two modes are indistinguishable; the major version comes from the binary so it does
- * not drift behind Chrome updates.
- */
-function headfulUserAgent(): string {
-  let major = '';
+/** Read the installed version without launching a macOS app into an existing session. */
+export function readChromeMajor(chromePath: string, platform = process.platform): string {
   try {
-    const raw = execFileSync(config.chromePath, ['--version'], { encoding: 'utf8', timeout: 10000 });
-    major = (raw.match(/(\d+)\./) || [])[1] || '';
-  } catch {
+    const executable = fs.realpathSync(chromePath);
+    const contents = path.dirname(path.dirname(executable));
+    const isApp = platform === 'darwin' && path.basename(path.dirname(executable)) === 'MacOS';
+    const raw = isApp
+      ? execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', path.join(contents, 'Info.plist')],
+        { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] })
+      : execFileSync(executable, ['--version'],
+        { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
+    const major = raw.trim().match(isApp ? /^(\d+)\./ : /\b(\d+)\./)?.[1];
+    if (!major) throw new Error('version output did not contain a major version');
+    return major;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`Cannot read Chrome version from ${chromePath}: ${reason}; refusing to run headless with a HeadlessChrome user agent.`);
   }
-  if (!major) {
-    throw new Error(`Cannot read Chrome version from ${config.chromePath}; refusing to run headless with a HeadlessChrome user agent.`);
-  }
+}
+
+function headfulUserAgent(): string {
+  const major = readChromeMajor(config.chromePath);
   return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
 }
 

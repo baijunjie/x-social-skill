@@ -43,13 +43,15 @@ All scripts except setup communicate via **stdin/stdout JSON**. The setup script
 {"success": false, "message": "X login expired. Run the setup script (\"run.sh setup\" in the skill directory) to log in."}
 ```
 
-Parse the output JSON, check `success` to determine result, and relay `message` to the user.
+Parse the output JSON, check `success` and `data.outcome`, and relay `message` to the user.
+
+For post/reply/quote, `data.outcome: "unknown"` with `retrySafe: false` means a submit was attempted but its URL could not be confirmed. Do not resubmit: use read-only checks of the target thread or account timeline, and report uncertainty if no matching URL can be established. A command timeout after submission also leaves the outcome unknown.
 
 **Auth errors:** Scripts automatically check authentication before executing. If auth is missing or expired, they return `success: false` with a message indicating the issue — no need to pre-check manually. When this happens, guide the user through the [Authentication](#2-run-authentication) setup steps.
 
 **Accounts:** Several X accounts can be set up. With more than one, scripts refuse to run until `X_ACCOUNT` names the account to act as (`X_ACCOUNT=handle`, with or without `@`), passed on the command line or set in `.env`. When the user has several accounts and has not said which one to use, ask before posting, replying, liking or deleting.
 
-**Timeout:** Set command timeout to at least **120 seconds** — browser automation involves launching Chrome, navigating pages, and verifying results.
+**Timeout:** Set command timeout to at least **300 seconds** — browser automation involves launching Chrome, navigating pages, and verifying results.
 
 ## Input Validation
 

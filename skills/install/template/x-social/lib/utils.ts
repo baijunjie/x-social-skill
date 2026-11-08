@@ -86,13 +86,14 @@ export async function clickTweetButton(tweet: Locator, selector: string, page: P
 }
 
 export async function checkLoginStatus(page: Page): Promise<{ loggedIn: boolean; onLoginPage: boolean }> {
-  const isLoggedIn = await page.locator(sel.accountSwitcher).isVisible().catch(() => false);
-  if (isLoggedIn) {
-    return { loggedIn: true, onLoginPage: false };
-  }
-
-  const onLoginPage = await page.locator(sel.usernameInput).isVisible().catch(() => false);
-  return { loggedIn: false, onLoginPage };
+  // isVisible() is a snapshot, even when passed a timeout.
+  await page.locator(`${sel.accountSwitcher}, ${sel.usernameInput}`).filter({ visible: true }).first()
+    .waitFor({ state: 'visible', timeout: config.timeouts.navigation })
+    .catch(err => {
+      throw new Error(`Account UI did not become visible within ${config.timeouts.navigation} ms; login status is unknown. ${err instanceof Error ? err.message : String(err)}`);
+    });
+  const loggedIn = await page.locator(sel.accountSwitcher).isVisible();
+  return { loggedIn, onLoginPage: !loggedIn && await page.locator(sel.usernameInput).isVisible() };
 }
 
 // ── Dialog submit ───────────────────────────────────────────────────────────
@@ -107,6 +108,8 @@ export interface DialogSubmitOptions {
 export interface DialogSubmitResult {
   success: boolean;
   error?: string;
+  /** A click was attempted; verify read-only before deciding whether it posted. */
+  submitted?: boolean;
 }
 
 export async function fillDialogAndSubmit(options: DialogSubmitOptions): Promise<DialogSubmitResult> {
@@ -134,18 +137,14 @@ export async function fillDialogAndSubmit(options: DialogSubmitOptions): Promise
     };
   }
 
-  await submitButton.click({ force: true });
-
-  // Verify dialog closed (confirms submission)
-  const dialogClosed = await dialog.waitFor({ state: 'hidden', timeout: config.timeouts.loadWait })
-    .then(() => true)
-    .catch(() => false);
-
-  if (!dialogClosed) {
-    return { success: false, error: 'Dialog still visible after submit — tweet may not have been posted.' };
+  try {
+    // Never retry a click: a timeout can arrive after X accepted it.
+    await submitButton.click({ force: true });
+    await dialog.waitFor({ state: 'hidden', timeout: config.timeouts.navigation });
+    return { success: true, submitted: true };
+  } catch {
+    return { success: false, submitted: true, error: 'Submission outcome unknown; verify read-only. Do not resubmit.' };
   }
-
-  return { success: true };
 }
 
 // ── Post verification ───────────────────────────────────────────────────────
@@ -167,6 +166,7 @@ export interface ProfileState {
   username: string;
   tab: ProfileTab;
   urlsBefore: string[];
+  capturedAt: number;
 }
 
 /**
@@ -175,13 +175,12 @@ export interface ProfileState {
  * Must be called on a page where the left sidebar is visible.
  */
 export async function captureProfileState(page: Page, tab: ProfileTab = 'with_replies'): Promise<ProfileState | null> {
-  const profileLink = page.locator('a[data-testid="AppTabBar_Profile_Link"]');
-  const profilePath = await profileLink.getAttribute('href').catch(() => null);
-  if (!profilePath) return null;
-
-  const username = profilePath.replace('/', '');
+  const capturedAt = Date.now();
+  const username = await getOwnHandle(page);
+  if (!username) return null;
+  const profilePath = `/${username}`;
   const urlsBefore = await getProfileTweetUrls(page, profilePath, username, tab);
-  return { profilePath, username, tab, urlsBefore };
+  return { profilePath, username, tab, urlsBefore, capturedAt };
 }
 
 /**
@@ -194,23 +193,55 @@ export async function captureProfileState(page: Page, tab: ProfileTab = 'with_re
  *
  * @returns The new tweet URL, or null if no new tweet was found.
  */
-export async function verifyNewTweet(page: Page, state: ProfileState): Promise<string | null> {
+export async function verifyNewTweet(page: Page, state: ProfileState, content: string): Promise<string | null> {
   for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
     if (attempt > 0) await page.waitForTimeout(config.timeouts.loadWait);
-    const urlsAfter = await getProfileTweetUrls(page, state.profilePath, state.username, state.tab);
-    const found = findNewTweetUrl(state.urlsBefore, urlsAfter);
+    const urlsAfter = await getProfileTweetUrls(page, state.profilePath, state.username, state.tab, content);
+    const fresh = urlsAfter.filter(url => Number((getStatusId(url) >> 22n) + 1288834974657n) >= state.capturedAt);
+    const found = findNewTweetUrl(state.urlsBefore, fresh);
     if (found) return found;
   }
   return null;
 }
 
-/** The signed-in account's handle, read from the sidebar without navigating away. */
-export async function getOwnHandle(page: Page): Promise<string | null> {
-  const href = await page
-    .locator('a[data-testid="AppTabBar_Profile_Link"]')
-    .getAttribute('href')
-    .catch(() => null);
-  return href ? href.replace('/', '') : null;
+/** Wait for the sidebar before reading identity; setup can omit the expected handle. */
+export async function getOwnHandle(page: Page, expectedHandle?: string): Promise<string | null> {
+  const profile = page.locator('a[data-testid="AppTabBar_Profile_Link"]');
+  try {
+    await profile.waitFor({ state: 'visible', timeout: config.timeouts.navigation });
+  } catch {
+    throw new Error(`Account sidebar did not become visible within ${config.timeouts.navigation} ms; account identity is unknown.`);
+  }
+  const href = await profile.getAttribute('href');
+  const handle = href?.match(/^\/([A-Za-z0-9_]+)\/?$/)?.[1] || null;
+  if (!handle) throw new Error('Account sidebar has no valid profile handle; account identity is unknown.');
+  if (expectedHandle && handle.toLowerCase() !== expectedHandle.replace(/^@/, '').toLowerCase()) {
+    throw new Error(`Account mismatch: expected @${expectedHandle.replace(/^@/, '')}, but sidebar shows @${handle}. No action was taken.`);
+  }
+  return handle;
+}
+
+/** Verify on a separate page so navigation cannot cancel a pending submit. */
+export async function verifySubmission(
+  page: Page,
+  label: string,
+  verify: (verificationPage: Page) => Promise<string | null>
+): Promise<ScriptResult> {
+  let verificationPage: Page | undefined;
+  try {
+    verificationPage = await page.context().newPage();
+    const url = await verify(verificationPage);
+    if (url) return { success: true, message: `${label} posted: ${url}`, data: { outcome: 'confirmed', url } };
+  } catch {
+    // A verification error does not prove that the write failed.
+  } finally {
+    await verificationPage?.close().catch(() => {});
+  }
+  return {
+    success: false,
+    message: `${label} submission outcome unknown: could not confirm its URL. Do not resubmit; check read-only first.`,
+    data: { outcome: 'unknown', submitted: true, retrySafe: false },
+  };
 }
 
 /**
@@ -226,13 +257,16 @@ export async function verifyOwnReplyOnTweetPage(
   page: Page,
   tweetUrl: string,
   username: string,
-  content: string
+  content: string,
+  submittedAfter: number
 ): Promise<string | null> {
-  const needle = content.trim().slice(0, 30);
+  const needle = content.trim().replace(/\s+/g, ' ');
 
   for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
     if (attempt > 0) await page.waitForTimeout(config.timeouts.loadWait);
-    await navigateTo(page, tweetUrl);
+    const target = tweetUrl.trim().match(/^(\d+)$/)?.[1];
+    await navigateTo(page, target ? `https://x.com/i/status/${target}` : tweetUrl);
+    await page.locator(sel.tweet).first().waitFor({ state: 'visible', timeout: config.timeouts.navigation });
 
     const href = await page.$$eval(
       sel.tweet,
@@ -242,11 +276,16 @@ export async function verifyOwnReplyOnTweetPage(
             const timeEl = article.querySelector('a[href*="/status/"] time');
             const link = timeEl ? (timeEl.closest('a') as HTMLAnchorElement | null) : null;
             const textEl = article.querySelector('[data-testid="tweetText"]') as HTMLElement | null;
-            return { href: link?.getAttribute('href') || '', text: textEl?.innerText || '' };
+            return { href: link?.getAttribute('href') || '', texts: [textEl?.innerText || '', textEl?.textContent || ''] };
           })
-          .filter(item => item.href.startsWith(`/${args.username}/status/`) && item.text.includes(args.needle))
+          .filter(item => {
+            const match = item.href.match(/^\/([^/]+)\/status\/(\d+)$/);
+            return match && match[1].toLowerCase() === args.username.toLowerCase()
+              && Number((BigInt(match[2]) >> 22n) + 1288834974657n) >= args.submittedAfter
+              && item.texts.some(text => text.trim().replace(/\s+/g, ' ') === args.needle);
+          })
           .map(item => item.href)[0] || '',
-      { username, needle }
+      { username, needle, submittedAfter }
     );
 
     if (href) return `https://x.com${href}`;
@@ -325,14 +364,20 @@ async function getTweetUrl(tweet: Locator): Promise<string | null> {
  * Scans a wide window and keeps every match: the Replies tab is not reliably
  * newest-first, so stopping at the first few would miss a just-posted item.
  */
-async function getOwnTweetUrls(page: Page, username: string, scan = SCAN_ARTICLES): Promise<string[]> {
+async function getOwnTweetUrls(page: Page, username: string, content?: string, scan = SCAN_ARTICLES): Promise<string[]> {
   const tweets = page.locator(sel.tweet);
   const count = await tweets.count();
   const urls: string[] = [];
 
   for (let i = 0; i < Math.min(count, scan); i++) {
-    const url = await getTweetUrl(tweets.nth(i));
-    if (url && url.includes(`/${username}/`)) {
+    const tweet = tweets.nth(i);
+    if (content !== undefined) {
+      const texts = await tweet.locator('[data-testid="tweetText"]').first()
+        .evaluate(el => [(el as HTMLElement).innerText, el.textContent || '']).catch(() => []);
+      if (!texts.some(text => text.trim().replace(/\s+/g, ' ') === content.trim().replace(/\s+/g, ' '))) continue;
+    }
+    const url = await getTweetUrl(tweet);
+    if (url && url.toLowerCase().includes(`/${username.toLowerCase()}/`)) {
       urls.push(url);
     }
   }
@@ -344,11 +389,14 @@ async function getProfileTweetUrls(
   page: Page,
   profilePath: string,
   username: string,
-  tab: ProfileTab = 'with_replies'
+  tab: ProfileTab = 'with_replies',
+  content?: string
 ): Promise<string[]> {
   const suffix = tab === 'posts' ? '' : '/with_replies';
   await navigateTo(page, `https://x.com${profilePath}${suffix}`);
-  return getOwnTweetUrls(page, username);
+  await page.locator(`${sel.tweet}, [data-testid="emptyState"]`).first()
+    .waitFor({ state: 'visible', timeout: config.timeouts.navigation });
+  return getOwnTweetUrls(page, username, content);
 }
 
 function getStatusId(url: string): bigint {

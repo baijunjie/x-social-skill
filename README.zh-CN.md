@@ -173,7 +173,12 @@ echo '{"content":"你好"}' | X_ACCOUNT=other_handle ./run.sh post
 
 无头 Chrome 的 `navigator.userAgent` 和 `Sec-CH-UA` client hints 都自报 `HeadlessChrome/<版本>`，
 站点读得到。启动时会把两者都覆盖成有头 UA，版本号取自本机 Chrome 自己的主版本，不会随 Chrome
-升级而错位；取不到版本号就拒绝启动，而不是带着暴露的 UA 上。
+升级而错位。macOS 应用包直接读取 `Info.plist`，不会为获取版本启动 Chrome；其他路径使用有超时限制的
+`--version` 探测。取不到版本号就拒绝启动。
+
+发帖、回复和引用会返回已核实的链接，或明确的未知结果（`data.outcome: "unknown"`、`retrySafe: false`）。
+提交超时后会在独立页面只读核验。不要自动重试结果未知的写入，先查看原帖或账号时间线。
+为提交和核验预留至少 300 秒。
 
 想盯着浏览器排查选择器时，不要设 `X_HEADLESS`。
 
