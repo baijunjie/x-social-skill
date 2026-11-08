@@ -8,6 +8,7 @@ import { Page, Locator } from 'playwright';
 import { ScriptResult } from './script.js';
 import { config } from './config.js';
 import { navigateTo } from './browser.js';
+import { tweetMatchesContent } from './tweet-content.js';
 
 // Shorthand for selectors
 const sel = config.selectors;
@@ -260,35 +261,15 @@ export async function verifyOwnReplyOnTweetPage(
   content: string,
   submittedAfter: number
 ): Promise<string | null> {
-  const needle = content.trim().replace(/\s+/g, ' ');
-
   for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
     if (attempt > 0) await page.waitForTimeout(config.timeouts.loadWait);
     const target = tweetUrl.trim().match(/^(\d+)$/)?.[1];
     await navigateTo(page, target ? `https://x.com/i/status/${target}` : tweetUrl);
     await page.locator(sel.tweet).first().waitFor({ state: 'visible', timeout: config.timeouts.navigation });
 
-    const href = await page.$$eval(
-      sel.tweet,
-      (articles, args) =>
-        articles
-          .map(article => {
-            const timeEl = article.querySelector('a[href*="/status/"] time');
-            const link = timeEl ? (timeEl.closest('a') as HTMLAnchorElement | null) : null;
-            const textEl = article.querySelector('[data-testid="tweetText"]') as HTMLElement | null;
-            return { href: link?.getAttribute('href') || '', texts: [textEl?.innerText || '', textEl?.textContent || ''] };
-          })
-          .filter(item => {
-            const match = item.href.match(/^\/([^/]+)\/status\/(\d+)$/);
-            return match && match[1].toLowerCase() === args.username.toLowerCase()
-              && Number((BigInt(match[2]) >> 22n) + 1288834974657n) >= args.submittedAfter
-              && item.texts.some(text => text.trim().replace(/\s+/g, ' ') === args.needle);
-          })
-          .map(item => item.href)[0] || '',
-      { username, needle, submittedAfter }
-    );
-
-    if (href) return `https://x.com${href}`;
+    const urls = await getOwnTweetUrls(page, username, content);
+    const found = urls.find(url => Number((getStatusId(url) >> 22n) + 1288834974657n) >= submittedAfter);
+    if (found) return found;
   }
 
   return null;
@@ -371,11 +352,7 @@ async function getOwnTweetUrls(page: Page, username: string, content?: string, s
 
   for (let i = 0; i < Math.min(count, scan); i++) {
     const tweet = tweets.nth(i);
-    if (content !== undefined) {
-      const texts = await tweet.locator('[data-testid="tweetText"]').first()
-        .evaluate(el => [(el as HTMLElement).innerText, el.textContent || '']).catch(() => []);
-      if (!texts.some(text => text.trim().replace(/\s+/g, ' ') === content.trim().replace(/\s+/g, ' '))) continue;
-    }
+    if (content !== undefined && !await tweetMatchesContent(tweet, content)) continue;
     const url = await getTweetUrl(tweet);
     if (url && url.toLowerCase().includes(`/${username.toLowerCase()}/`)) {
       urls.push(url);

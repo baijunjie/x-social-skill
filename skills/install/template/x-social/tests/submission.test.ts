@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright';
 import { config } from '../lib/config.js';
+import { tweetMatchesContent } from '../lib/tweet-content.js';
 import {
   checkLoginStatus, getOwnHandle, getTargetTweet, clickTweetButton,
   fillDialogAndSubmit, verifySubmission, verifyOwnReplyOnTweetPage, verifyNewTweet,
@@ -133,4 +134,44 @@ test('verification preserves full link text hidden by X display spans', async ()
   await page.route('https://x.com/i/status/123', route => route.fulfill({ contentType: 'text/html', body }));
   assert.equal(await verifyOwnReplyOnTweetPage(page, '123', 'me',
     'Read https://github.com/baijunjie/octoboard', started), `https://x.com/me/status/${fresh}`);
+}));
+
+for (const [label, text, card] of [
+  ['expanded URL', 'Read <a href="https://t.co/short" data-expanded-url="https://x.com/hifumi369/status/555">x.com/hifumi369/sta…</a>', ''],
+  ['link title', 'Read <a href="https://t.co/short" title="https://x.com/hifumi369/status/555">x.com/hifumi369/sta…</a>', ''],
+  ['full href', 'Read <a href="https://x.com/hifumi369/status/555">x.com/hifumi369/sta…</a>', ''],
+  ['quote card', 'Read', '<div role="link"><a href="/hifumi369/status/555"><time>quoted post</time></a><div data-testid="tweetText">Quoted content</div></div>'],
+]) {
+  test(`reply and profile verification recover original links from ${label}`, async () => fixture(async page => {
+    const started = Date.now();
+    const fresh = statusId(started + 1);
+    const body = article('me', fresh, text).replace('</article>', card + '</article>');
+    await page.route('https://x.com/i/status/123', route => route.fulfill({ contentType: 'text/html', body }));
+    await page.route('https://x.com/me', route => route.fulfill({ contentType: 'text/html', body }));
+    const content = 'Read https://x.com/hifumi369/status/555';
+    const expected = `https://x.com/me/status/${fresh}`;
+    assert.equal(await verifyOwnReplyOnTweetPage(page, '123', 'me', content, started), expected);
+    assert.equal(await verifyNewTweet(page, {
+      username: 'me', profilePath: '/me', tab: 'posts', urlsBefore: [], capturedAt: started,
+    }, content), expected);
+  }));
+}
+
+test('a shortened prefix or an unrelated quote cannot prove the expected URL', async () => fixture(async page => {
+  const started = Date.now();
+  const body = article('me', statusId(started + 1), 'Read <a href="https://t.co/short">x.com/hifumi369/sta…</a>')
+    + article('me', statusId(started + 2), 'Read').replace('</article>', '<a href="/hifumi369/status/556">Other quote</a></article>');
+  await page.route('https://x.com/i/status/123', route => route.fulfill({ contentType: 'text/html', body }));
+  assert.equal(await verifyOwnReplyOnTweetPage(page, '123', 'me', 'Read https://x.com/hifumi369/status/555', started), null);
+}));
+
+
+test('URL evidence cannot replace matching body text or prove a second missing link', async () => fixture(async page => {
+  await page.setContent(article('me', '123', 'Different body <a title="https://x.com/hifumi369/status/555">x.com/…</a>'));
+  assert.equal(await tweetMatchesContent(page.locator('article'), 'Read https://x.com/hifumi369/status/555'), false);
+  await page.setContent(article('me', '123', 'Read <a title="https://x.com/hifumi369/status/556">x.com/hifumi369/sta…</a>'));
+  assert.equal(await tweetMatchesContent(page.locator('article'), 'Read https://x.com/hifumi369/status/555'), false);
+  await page.setContent(article('me', '123', 'Read <a title="https://x.com/hifumi369/status/555">x.com/…</a>'));
+  assert.equal(await tweetMatchesContent(page.locator('article'),
+    'Read https://x.com/hifumi369/status/555 https://github.com/baijunjie/octoboard'), false);
 }));
