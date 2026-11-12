@@ -16,6 +16,9 @@ async function fixture(run: (page: import('playwright').Page) => Promise<void>) 
       <a href="/other/status/123"><time>reply</time></a><button data-testid="like">like</button>
     </article><article data-testid="tweet" id="other">
       <a href="/other/status/1234"><time>other</time></a><button data-testid="like">like</button>
+    </article><article data-testid="tweet" id="edited">
+      <a href="/other/status/77/history"><time>edited</time></a><button data-testid="like">like</button>
+      <a href="/other/status/78"><time>latest edit</time></a>
     </article><script>document.addEventListener('click', e => {
       if (e.target.dataset.testid === 'like') e.target.dataset.testid = 'unlike';
     });</script>`);
@@ -41,6 +44,21 @@ test('matches raw IDs and standalone posts; missing targets never fall back to t
     assert.equal(await getTargetTweet(page, '123').getAttribute('id'), 'reply');
     assert.equal(await getTargetTweet(page, 'https://x.com/me/status/12').getAttribute('id'), 'parent');
     assert.equal(await getTargetTweet(page, 'https://x.com/no/status/999').count(), 0);
+    assert.equal(await getTargetTweet(page, 'https://x.com/other/status/77').getAttribute('id'), 'edited');
+    assert.equal(await getTargetTweet(page, 'https://x.com/other/status/7').count(), 0);
+    assert.equal(await getTargetTweet(page, 'https://x.com/other/status/177').count(), 0);
+  });
+});
+
+test('likes an edited post whose timestamp links to its edit history', async () => {
+  await fixture(async page => {
+    const result = await toggleTweetAction({
+      tweet: getTargetTweet(page, 'https://x.com/other/status/77'), page,
+      actionButtonSelector: '[data-testid="like"]', doneButtonSelector: '[data-testid="unlike"]', actionName: 'Like',
+    });
+    assert.equal(result.success, true);
+    assert.equal(await page.locator('#edited [data-testid="unlike"]').count(), 1);
+    assert.equal(await page.locator('#reply [data-testid="like"]').count(), 1);
   });
 });
 

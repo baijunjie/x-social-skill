@@ -70,12 +70,15 @@ export function getFirstTweet(page: Page): Locator {
   return page.locator(sel.tweet).first();
 }
 
-/** Match the requested status, since a reply page can show its parent first. */
+/**
+ * Match the requested status, since a reply page can show its parent first.
+ * An edited post links its timestamp to `/status/<id>/history` instead.
+ */
 export function getTargetTweet(page: Page, tweetUrl: string): Locator {
   const match = tweetUrl.match(/\/status\/(\d+)(?:[/?#]|$)/) || tweetUrl.trim().match(/^(\d+)$/);
   if (!match) throw new Error('Cannot identify the target tweet status ID');
   return page.locator(sel.tweet).filter({
-    has: page.locator(`a[href$="/status/${match[1]}"] time`),
+    has: page.locator(`a[href$="/status/${match[1]}"] time, a[href$="/status/${match[1]}/history"] time`),
   }).first();
 }
 
